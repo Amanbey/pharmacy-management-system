@@ -702,7 +702,6 @@ const PharmacistOverview = ({ user }) => {
                }
             </div>
          </div>
-         {/* Custom Circular Doughnut Chart using CSS Conic Gradient */}
          <div className="relative w-40 h-40 shrink-0 flex items-center justify-center rounded-full shadow-inner" style={{ background: `conic-gradient(${conicGradientString})` }}>
             <div className="absolute w-28 h-28 bg-white rounded-full flex items-center justify-center flex-col shadow-md">
                <span className="text-xl font-extrabold text-slate-800">{stats.totalDrugs}</span>
@@ -715,7 +714,7 @@ const PharmacistOverview = ({ user }) => {
 };
 
 const PharmacistDashboard = ({ user, setUser, handleLogout }) => {
-  const [activeView, setActiveView] = useState('overview');
+  const [activeView, setActiveView] = useState('new-order');
   const [inventory, setInventory] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState([]);
@@ -892,35 +891,263 @@ const PharmacistDashboard = ({ user, setUser, handleLogout }) => {
   );
 };
 
-// --- Cashier Role Dashboard (Placeholder for next phase) ---
-const CashierDashboard = ({ user, handleLogout }) => (
-  <div className="flex h-screen bg-slate-50 items-center justify-center flex-col p-8 text-center animate-fade-in">
-    <div className="bg-white p-10 rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full">
-      <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-        <ShoppingCart size={40} />
-      </div>
-      <h1 className="text-3xl font-extrabold text-slate-800 mb-2">Cashier POS</h1>
-      <p className="text-slate-500 mb-8">Welcome, <span className="font-bold text-slate-700">{user.name}</span>. The Cashier Point of Sale System is under construction.</p>
-      <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 px-8 rounded-lg transition-colors flex items-center justify-center gap-2 mx-auto">
-        <LogOut size={18} /> Sign Out
-      </button>
+// ==========================================
+// CASHIER DASHBOARD (NEW POS SYSTEM)
+// ==========================================
+
+const CashierDashboard = ({ user, setUser, handleLogout }) => {
+  const [activeView, setActiveView] = useState('queue');
+  const [orders, setOrders] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const fetchOrders = async () => {
+    try {
+      const response = await axios.get('http://localhost:5000/api/orders');
+      setOrders(Array.isArray(response.data) ? response.data : []);
+    } catch (err) { console.error("Failed to fetch orders", err); }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+    // Auto-refresh the queue every 10 seconds to catch new pharmacist orders
+    const interval = setInterval(fetchOrders, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const showToast = (msg, type = 'success') => setToast({ message: msg, type });
+
+  const handleProcessPayment = async () => {
+    if (!selectedOrder) return;
+    setIsProcessing(true);
+    try {
+      await axios.put(`http://localhost:5000/api/orders/${selectedOrder._id}/process`, {
+        paymentMethod,
+        cashierName: user.name,
+        status: 'Paid'
+      });
+      showToast('Payment successful! Inventory updated.');
+      setSelectedOrder(null);
+      fetchOrders();
+    } catch (err) {
+      showToast('Failed to process payment.', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const pendingOrders = orders.filter(o => o.status === 'Pending');
+  const completedOrders = orders.filter(o => o.status === 'Paid' && o.cashierName === user.name);
+
+  return (
+    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      
+      {/* Sleek Sidebar specific to Cashier (Emerald Theme) */}
+      <nav className="w-56 bg-[#047857] text-white flex flex-col shadow-2xl z-20 shrink-0">
+        <div className="p-5 border-b border-emerald-800/50">
+          <h1 className="text-xl font-extrabold tracking-tight flex items-center gap-2 mb-6">
+            <span className="text-[#047857] bg-white p-1 rounded-md shadow-sm">✚</span> Amazon Pharmacy
+          </h1>
+          <div className="flex flex-col items-center bg-emerald-900/40 p-4 rounded-xl border border-emerald-700/50 relative group">
+            <img src={user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=064E3B&color=fff&bold=true`} alt="Profile" className="w-14 h-14 rounded-full border-[3px] border-emerald-400 shadow-xl mb-2 object-cover bg-white" />
+            <p className="font-extrabold text-white text-base tracking-tight text-center">{user.name}</p>
+            <p className="text-emerald-200 text-[10px] uppercase tracking-widest font-bold mt-0.5">Cashier</p>
+          </div>
+        </div>
+        <div className="flex-1 py-6 px-4 space-y-1.5 overflow-y-auto">
+          {[
+            { id: 'queue', label: 'Pending Queue', icon: Clock },
+            { id: 'history', label: 'My Transactions', icon: Receipt },
+            { id: 'settings', label: 'Profile Settings', icon: Settings }
+          ].map((item) => (
+             <button 
+                key={item.id} 
+                onClick={() => { setActiveView(item.id); setSelectedOrder(null); }} 
+                className={`flex items-center w-full px-3 py-2.5 rounded-lg transition-all duration-200 ${activeView === item.id ? 'bg-emerald-800 text-white shadow-lg' : 'text-emerald-100 hover:bg-emerald-800/60 font-medium'}`}
+             >
+               <item.icon className={`mr-3 ${activeView === item.id ? 'text-emerald-200' : 'text-emerald-300'}`} size={18}/> 
+               <span className="tracking-wide text-sm">{item.label}</span>
+               {item.id === 'queue' && pendingOrders.length > 0 && (
+                 <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{pendingOrders.length}</span>
+               )}
+             </button>
+          ))}
+        </div>
+        <div className="p-4 border-t border-emerald-800/50">
+          <button onClick={handleLogout} className="flex items-center justify-center w-full px-3 py-2.5 text-emerald-100 hover:bg-red-500 hover:text-white rounded-lg transition-all font-bold tracking-wide text-sm">
+            <LogOut className="mr-2" size={18}/> Sign Out
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Area */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden p-6 bg-slate-50">
+         
+         {activeView === 'settings' && (
+             <div className="w-full max-w-4xl mx-auto overflow-y-auto h-full">
+                 <header className="mb-6">
+                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">Account Settings</h2>
+                    <p className="text-slate-500 text-sm font-medium mt-1">Manage your personal cashier profile.</p>
+                 </header>
+                 <ProfileSettings user={user} setUser={setUser} themeColor="#047857" />
+             </div>
+         )}
+
+         {activeView === 'history' && (
+            <div className="w-full h-full flex flex-col overflow-hidden">
+               <header className="mb-6 shrink-0">
+                  <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">My Transactions Today</h2>
+                  <p className="text-slate-500 text-sm font-medium mt-1">Review orders you have successfully processed.</p>
+               </header>
+               <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-y-auto">
+                 <table className="w-full text-left text-sm">
+                   <thead className="bg-slate-50 border-b border-slate-100">
+                     <tr>
+                       <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Time</th>
+                       <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Prescribed By</th>
+                       <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Method</th>
+                       <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Amount</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-100">
+                     {completedOrders.map((o) => (
+                       <tr key={o._id} className="hover:bg-slate-50 transition-colors">
+                         <td className="px-5 py-4 font-bold text-slate-800">{new Date(o.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                         <td className="px-5 py-4 text-slate-600 font-medium">{o.pharmacistName}</td>
+                         <td className="px-5 py-4"><span className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-full text-[10px] font-bold text-slate-600 uppercase tracking-wider">{o.paymentMethod}</span></td>
+                         <td className="px-5 py-4 font-mono font-extrabold text-emerald-600 text-right">{o.totalAmount?.toFixed(2)} ETB</td>
+                       </tr>
+                     ))}
+                     {completedOrders.length === 0 && <tr><td colSpan="4" className="px-5 py-10 text-center text-slate-400 font-medium">No transactions processed today.</td></tr>}
+                   </tbody>
+                 </table>
+               </div>
+            </div>
+         )}
+         
+         {activeView === 'queue' && (
+            <>
+                <header className="mb-4 shrink-0 flex justify-between items-end">
+                  <div>
+                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">Payment Processing <button onClick={fetchOrders} className="text-emerald-600 hover:text-emerald-800 bg-emerald-50 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest ml-2">Refresh Queue</button></h2>
+                    <p className="text-slate-500 text-sm font-medium mt-1">Select a pending order from the queue to finalize payment.</p>
+                  </div>
+                </header>
+
+                <div className="flex-1 flex gap-6 overflow-hidden">
+                
+                {/* Left Side: Pending Queue */}
+                <div className="w-[350px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
+                    <div className="p-4 border-b border-slate-100 bg-emerald-900 text-white flex justify-between items-center">
+                      <h2 className="font-bold tracking-wide text-sm flex items-center gap-2"><Clock size={16}/> Waiting Queue</h2>
+                      <span className="bg-red-500 text-[10px] px-2.5 py-1 rounded-full font-bold">{pendingOrders.length}</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/50">
+                      {pendingOrders.map(order => (
+                        <div 
+                          key={order._id} 
+                          onClick={() => setSelectedOrder(order)}
+                          className={`p-4 rounded-xl border transition-all cursor-pointer shadow-sm ${selectedOrder?._id === order._id ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-300'}`}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Pharmacist</p>
+                              <p className="font-extrabold text-slate-800 text-sm">{order.pharmacistName}</p>
+                            </div>
+                            <span className="font-mono font-extrabold text-emerald-700">{order.totalAmount?.toFixed(2)} ETB</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100">
+                            <span className="text-xs text-slate-500 font-medium">{order.items.length} items</span>
+                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock size={12}/> {new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {pendingOrders.length === 0 && (
+                        <div className="text-center py-10 text-slate-400 font-medium text-sm flex flex-col items-center">
+                          <CheckCircle size={32} className="text-slate-300 mb-2" />
+                          Queue is empty.<br/>All caught up!
+                        </div>
+                      )}
+                    </div>
+                </div>
+
+                {/* Right Side: Order Details & Payment */}
+                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                  {selectedOrder ? (
+                    <>
+                      <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                         <div>
+                           <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Order Details</h2>
+                           <p className="text-slate-500 text-xs font-medium mt-1">Prescribed by {selectedOrder.pharmacistName}</p>
+                         </div>
+                         <div className="text-right">
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Amount Due</p>
+                           <p className="text-3xl font-extrabold text-slate-900 font-mono leading-none">{selectedOrder.totalAmount?.toFixed(2)} <span className="text-lg">ETB</span></p>
+                         </div>
+                      </div>
+                      
+                      <div className="flex-1 overflow-y-auto p-6">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Itemized Bill</h3>
+                        <div className="space-y-4">
+                          {selectedOrder.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <div>
+                                <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                <p className="text-xs text-slate-500 font-medium">{item.unitPrice?.toFixed(2)} ETB × {item.quantity}</p>
+                              </div>
+                              <span className="font-mono font-bold text-slate-900">{item.subtotal?.toFixed(2)} ETB</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="p-6 bg-slate-50 border-t border-slate-200">
+                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Select Payment Method</h3>
+                        <div className="grid grid-cols-3 gap-3 mb-6">
+                          {['Cash', 'Card', 'Transfer'].map(method => (
+                            <button 
+                              key={method} 
+                              onClick={() => setPaymentMethod(method)}
+                              className={`py-3 rounded-lg font-bold text-sm transition-all border ${paymentMethod === method ? 'bg-[#047857] text-white border-[#047857] shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400'}`}
+                            >
+                              {method}
+                            </button>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={handleProcessPayment} 
+                          disabled={isProcessing}
+                          className={`w-full py-4 rounded-xl font-bold text-base transition-all shadow-md flex items-center justify-center gap-2 ${isProcessing ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-[#047857] hover:bg-emerald-800 text-white hover:shadow-lg'}`}
+                        >
+                          {isProcessing ? 'Processing...' : <><ShoppingCart size={20}/> Confirm Payment & Print Receipt</>}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                      <Receipt size={64} className="text-slate-200 mb-4" />
+                      <p className="font-medium">Select an order from the queue to process payment.</p>
+                    </div>
+                  )}
+                </div>
+
+                </div>
+            </>
+         )}
+      </main>
     </div>
-  </div>
-);
+  );
+};
 
 // --- Main App Component ---
 export default function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('user');
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null); // Explicitly setting to null forces LoginScreen on hard refresh
 
   const handleLogout = () => {
-    localStorage.clear(); // Complete clear prevents old state memory
+    localStorage.clear(); 
     setUser(null);
   };
 
@@ -928,14 +1155,14 @@ export default function App() {
     return <LoginScreen onLogin={setUser} />;
   }
 
-  // Strict lowercase routing prevents the Admin/pharmacist refresh bug
+  // Strict lowercase routing
   switch (user?.role?.toLowerCase()) {
     case 'admin':
       return <AdminDashboard user={user} setUser={setUser} handleLogout={handleLogout} />;
     case 'pharmacist':
       return <PharmacistDashboard user={user} setUser={setUser} handleLogout={handleLogout} />;
     case 'cashier':
-      return <CashierDashboard user={user} handleLogout={handleLogout} />;
+      return <CashierDashboard user={user} setUser={setUser} handleLogout={handleLogout} />;
     default:
       return (
         <div className="flex h-screen items-center justify-center bg-red-50 text-red-600 flex-col">
